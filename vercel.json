@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/sync/amazon?days=7",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/sync/shopify?days=7",
+      "schedule": "15 6 * * *"
+    }
+  ]
+}

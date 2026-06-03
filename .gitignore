@@ -32,6 +32,12 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but commit the non-secret base config and the template.
+!.env
+!.env.example
+
+# Claude Code local permissions/allowlist (machine-specific, may contain secrets)
+.claude/settings.local.json
 
 # vercel
 .vercel
