@@ -88,7 +88,7 @@ function getVariantMeta(): Map<string, VariantMeta> {
 async function fetchDailyCogs(
   startDate: string,
   endDate: string,
-): Promise<Map<string, number>> {
+): Promise<{ dailyCogs: Map<string, number>; dailyUnits: Map<string, number> }> {
   // gross_sales = price × units (pre-discount), so units = gross_sales / price
   // COGS per variant-day = (gross_sales / price) × unit_cost
   const [rows, variantMeta] = await Promise.all([
