@@ -7,6 +7,7 @@ import { MarketplaceChart } from "@/components/MarketplaceChart";
 import { PeriodCards } from "@/components/PeriodCards";
 import { RangePicker } from "@/components/RangePicker";
 import { SalesChart } from "@/components/SalesChart";
+import { AutoRefresh } from "@/components/AutoRefresh";
 import {
   defaultRange,
   getDashboardPeriods,
@@ -72,6 +73,7 @@ export default async function Home({ searchParams }: PageProps) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <AutoRefresh />
       <div className="mx-auto max-w-[1600px] px-6 py-6 space-y-6">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between border-b pb-4">
           <div>
