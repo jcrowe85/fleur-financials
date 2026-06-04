@@ -65,6 +65,10 @@ export interface SalesMetrics {
     orders: number;
     avgDailySales: number;
     topSubChannel: string | null;
+    fbaFees: number | null;
+    referralFees: number | null;
+    refundCount: number;
+    refundAmountFinancial: number | null;
   };
   daily: DailyPoint[];
   byChannel: ChannelTotal[];
@@ -97,9 +101,14 @@ export async function getSalesMetrics({
   let totalGross = 0;
   let totalNet = 0;
   let totalCogs = 0;
-  let cogsCoverage = 0; // number of rows that reported COGS
+  let cogsCoverage = 0;
   let totalUnits = 0;
   let totalOrders = 0;
+  let totalFbaFees = 0;
+  let totalReferralFees = 0;
+  let totalRefundCount = 0;
+  let totalRefundAmountFinancial = 0;
+  let financialCoverage = 0;
 
   for (const row of rows) {
     const dateStr = formatDate(row.date);
@@ -117,6 +126,16 @@ export async function getSalesMetrics({
     }
     totalUnits += units;
     totalOrders += orders;
+
+    const fba = row.fbaFees === null ? null : Number(row.fbaFees);
+    const ref = row.referralFees === null ? null : Number(row.referralFees);
+    if (fba !== null || ref !== null) {
+      totalFbaFees += fba ?? 0;
+      totalReferralFees += ref ?? 0;
+      financialCoverage++;
+    }
+    totalRefundCount += row.refundCount ?? 0;
+    totalRefundAmountFinancial += row.refundAmount === null ? 0 : Number(row.refundAmount);
 
     const day =
       dailyMap.get(dateStr) ??
@@ -180,6 +199,10 @@ export async function getSalesMetrics({
       orders: totalOrders,
       avgDailySales: totalGross / avgDivisor,
       topSubChannel: byChannel[0]?.subChannel ?? null,
+      fbaFees: financialCoverage > 0 ? totalFbaFees : null,
+      referralFees: financialCoverage > 0 ? totalReferralFees : null,
+      refundCount: totalRefundCount,
+      refundAmountFinancial: totalRefundAmountFinancial > 0 ? totalRefundAmountFinancial : null,
     },
     daily,
     byChannel,
@@ -225,21 +248,19 @@ function pctDelta(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100;
 }
 
+const SHIPPING_PER_ORDER = 6.50; // Pirate Ship blended average
+
 export interface PeriodTotals {
   grossSales: number;
   netSales: number;
   units: number;
   orders: number;
   avgOrderValue: number;
-  // The following are channel-specific or require extra data sources.
-  // Null means "data source not connected yet". Wired up as we add connectors:
-  //   refundAmount → Amazon SP-API financial events
-  //   adCost       → Amazon Ads + TikTok Ads + Meta Ads connectors
-  //   estPayout    → sales − fees − refunds (settlement report)
-  //   grossProfit  → sales − COGS (user-uploaded COGS file)
-  //   netProfit    → grossProfit − adCost − fees − refunds
   refundAmount: number | null;
+  refundCount: number | null;
+  cogs: number | null;
   adCost: number | null;
+  shippingCost: number | null;
   estPayout: number | null;
   grossProfit: number | null;
   netProfit: number | null;
@@ -257,13 +278,36 @@ export interface PeriodCard {
   forecastBasis?: { daysElapsed: number; daysInMonth: number };
 }
 
-function totalsOf(metrics: SalesMetrics): PeriodTotals {
+function totalsOf(metrics: SalesMetrics, adCost: number | null = null): PeriodTotals {
   const aov =
     metrics.totals.orders > 0 ? metrics.totals.netSales / metrics.totals.orders : 0;
-  // "Refunds" line = the dollar value subtracted from gross to get net
-  // (covers Shopify discounts + returns; null for sources where we can't tell).
-  const diff = metrics.totals.grossSales - metrics.totals.netSales;
-  const refundAmount = diff > 0.01 ? diff : null;
+
+  const refundAmount = metrics.totals.refundAmountFinancial || null;
+
+  const refundCount = metrics.totals.refundCount > 0 ? metrics.totals.refundCount : null;
+
+  // est. payout = netSales − Amazon fees (when financial events data available)
+  const fba = metrics.totals.fbaFees ?? 0;
+  const referral = metrics.totals.referralFees ?? 0;
+  const estPayout =
+    metrics.totals.fbaFees !== null || metrics.totals.referralFees !== null
+      ? metrics.totals.netSales - fba - referral
+      : null;
+
+  const cogs = metrics.totals.cogs || null;
+  const grossProfit = metrics.totals.grossProfit;
+  const shippingCost = metrics.totals.orders > 0
+    ? metrics.totals.orders * SHIPPING_PER_ORDER
+    : null;
+
+  // net profit: grossProfit − adCost − shipping (fall back to estPayout for Amazon)
+  const netProfit =
+    grossProfit !== null && adCost !== null
+      ? grossProfit - adCost - (shippingCost ?? 0)
+      : estPayout !== null && adCost !== null
+        ? estPayout - adCost - (shippingCost ?? 0)
+        : null;
+
   return {
     grossSales: metrics.totals.grossSales,
     netSales: metrics.totals.netSales,
@@ -271,10 +315,13 @@ function totalsOf(metrics: SalesMetrics): PeriodTotals {
     orders: metrics.totals.orders,
     avgOrderValue: aov,
     refundAmount,
-    adCost: null,
-    estPayout: null,
-    grossProfit: metrics.totals.grossProfit,
-    netProfit: null,
+    refundCount,
+    cogs,
+    adCost,
+    shippingCost,
+    estPayout,
+    grossProfit,
+    netProfit,
   };
 }
 
@@ -314,14 +361,27 @@ export async function getDashboardPeriods(channel?: string | null): Promise<Peri
     Date.UTC(year, month - 1, Math.min(daysElapsed, lastMonthEnd.getUTCDate())),
   );
 
+  async function getAdCost(from: Date, to: Date): Promise<number | null> {
+    // Map sales channels to their ad platform channels.
+    // shopify ← meta + tiktok (DTC social); amazon ← amazon_ads; null ← all.
+    const adChannels =
+      channel === "shopify" ? ["meta", "tiktok"] :
+      channel === "amazon" ? ["amazon_ads"] :
+      null;
+    const rows = await db.factAdSpendDaily.findMany({
+      where: {
+        date: { gte: from, lte: to },
+        ...(adChannels ? { channel: { in: adChannels } } : {}),
+      },
+    });
+    if (rows.length === 0) return null;
+    const total = rows.reduce((s, r) => s + Number(r.spend), 0);
+    return total > 0 ? total : null;
+  }
+
   const [
-    todayM,
-    yesterdayM,
-    dayBeforeM,
-    mtdM,
-    mtdLastMonthM,
-    lastMonthM,
-    monthBeforeLastM,
+    todayM, yesterdayM, dayBeforeM, mtdM, mtdLastMonthM, lastMonthM, monthBeforeLastM,
+    adToday, adYesterday, adDayBefore, adMtd, adMtdLast, adLastMonth, adMonthBeforeLast,
   ] = await Promise.all([
     getSalesMetrics({ from: today, to: today, channel }),
     getSalesMetrics({ from: yesterday, to: yesterday, channel }),
@@ -330,24 +390,30 @@ export async function getDashboardPeriods(channel?: string | null): Promise<Peri
     getSalesMetrics({ from: mtdLastMonthStart, to: mtdLastMonthEnd, channel }),
     getSalesMetrics({ from: lastMonthStart, to: lastMonthEnd, channel }),
     getSalesMetrics({ from: monthBeforeLastStart, to: monthBeforeLastEnd, channel }),
+    getAdCost(today, today),
+    getAdCost(yesterday, yesterday),
+    getAdCost(dayBeforeYesterday, dayBeforeYesterday),
+    getAdCost(monthStart, mtdEnd),
+    getAdCost(mtdLastMonthStart, mtdLastMonthEnd),
+    getAdCost(lastMonthStart, lastMonthEnd),
+    getAdCost(monthBeforeLastStart, monthBeforeLastEnd),
   ]);
 
   function makeDeltas(c: PeriodTotals, p: PeriodTotals) {
     return {
-      // Compare net since net is the headline number now.
       grossSales: pctDelta(c.netSales, p.netSales),
       units: pctDelta(c.units, p.units),
       orders: pctDelta(c.orders, p.orders),
     };
   }
 
-  const todayT = totalsOf(todayM);
-  const yesterdayT = totalsOf(yesterdayM);
-  const dayBeforeT = totalsOf(dayBeforeM);
-  const mtdT = totalsOf(mtdM);
-  const mtdLastT = totalsOf(mtdLastMonthM);
-  const lastMonthT = totalsOf(lastMonthM);
-  const monthBeforeLastT = totalsOf(monthBeforeLastM);
+  const todayT = totalsOf(todayM, adToday);
+  const yesterdayT = totalsOf(yesterdayM, adYesterday);
+  const dayBeforeT = totalsOf(dayBeforeM, adDayBefore);
+  const mtdT = totalsOf(mtdM, adMtd);
+  const mtdLastT = totalsOf(mtdLastMonthM, adMtdLast);
+  const lastMonthT = totalsOf(lastMonthM, adLastMonth);
+  const monthBeforeLastT = totalsOf(monthBeforeLastM, adMonthBeforeLast);
 
   const mtdDaysWithData = Math.max(1, mtdM.range.daysWithData);
   const pace = mtdT.netSales / mtdDaysWithData;
@@ -355,7 +421,8 @@ export async function getDashboardPeriods(channel?: string | null): Promise<Peri
   const forecastGross = (mtdT.grossSales / mtdDaysWithData) * daysInMonth;
   const forecastUnits = (mtdT.units / mtdDaysWithData) * daysInMonth;
   const forecastOrders = (mtdT.orders / mtdDaysWithData) * daysInMonth;
-  // Forecast gross profit: scale MTD gross profit by same factor as sales.
+  const mtdCogs = mtdM.totals.cogs;
+  const forecastCogs = mtdCogs !== null ? (mtdCogs / mtdDaysWithData) * daysInMonth : null;
   const mtdGrossProfit = mtdM.totals.grossProfit;
   const forecastGrossProfit =
     mtdGrossProfit !== null ? (mtdGrossProfit / mtdDaysWithData) * daysInMonth : null;
@@ -368,7 +435,10 @@ export async function getDashboardPeriods(channel?: string | null): Promise<Peri
     orders: forecastOrders,
     avgOrderValue: forecastOrders > 0 ? forecastNet / forecastOrders : 0,
     refundAmount: forecastRefunds > 0.01 ? forecastRefunds : null,
+    refundCount: null,
+    cogs: forecastCogs,
     adCost: null,
+    shippingCost: forecastOrders > 0 ? forecastOrders * SHIPPING_PER_ORDER : null,
     estPayout: null,
     grossProfit: forecastGrossProfit,
     netProfit: null,

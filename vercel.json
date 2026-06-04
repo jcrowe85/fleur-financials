@@ -1,12 +1,20 @@
 {
   "crons": [
     {
-      "path": "/api/sync/amazon?days=7",
-      "schedule": "0 6 * * *"
+      "path": "/api/sync/amazon?days=2",
+      "schedule": "*/15 * * * *"
     },
     {
-      "path": "/api/sync/shopify?days=7",
-      "schedule": "15 6 * * *"
+      "path": "/api/sync/shopify?days=2",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/sync/meta?days=2",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/sync/amazon-financials?days=7",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

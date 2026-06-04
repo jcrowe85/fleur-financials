@@ -24,8 +24,8 @@ export function KpiCard({ label, value, delta, hint }: KpiCardProps) {
         <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </div>
-        <div className="text-2xl font-semibold tabular-nums mt-1.5 leading-tight">{value}</div>
-        <div className="flex items-baseline gap-2 mt-1 text-xs">
+        <div className="text-[26px] font-semibold tabular-nums mt-1.5 leading-tight">{value}</div>
+        <div className="flex items-baseline gap-2 mt-1 text-[13px]">
           {delta !== undefined && delta !== null ? (
             <span
               className={cn(

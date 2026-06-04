@@ -72,7 +72,7 @@ export default async function Home({ searchParams }: PageProps) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-7xl px-6 py-6 space-y-6">
+      <div className="mx-auto max-w-[1600px] px-6 py-6 space-y-6">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between border-b pb-4">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Fleur Sales</h1>
@@ -136,7 +136,7 @@ export default async function Home({ searchParams }: PageProps) {
           </Card>
         ) : null}
 
-        <PeriodCards label="All channels" periods={allPeriods} />
+        <PeriodCards label="All channels" periods={allPeriods} collapsible />
         <PeriodCards label="Shopify" periods={shopifyPeriods} accent="emerald" />
         <PeriodCards label="Amazon" periods={amazonPeriods} accent="amber" />
 
