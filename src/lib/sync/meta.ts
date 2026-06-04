@@ -48,7 +48,7 @@ async function fetchInsights(dateFrom: string, dateTo: string): Promise<MetaInsi
     const json = await res.json() as {
       data?: MetaInsightRow[];
       paging?: { next?: string };
-      error?: { message: string };
+      error?: { message: string; code?: number; type?: string };
     };
     if (json.error) {
       const isTokenExpired =
