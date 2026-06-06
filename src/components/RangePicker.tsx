@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import {
   Select,
@@ -20,6 +20,7 @@ const PRESETS = [
 
 export function RangePicker() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
@@ -32,7 +33,7 @@ export function RangePicker() {
     params.delete("from");
     params.delete("to");
     startTransition(() => {
-      router.replace(`/?${params.toString()}`);
+      router.replace(`${pathname}?${params.toString()}`);
     });
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { META_PERIOD_OPTIONS, type MetaPeriodKey } from "@/lib/meta-metrics";
@@ -10,6 +10,7 @@ import { META_PERIOD_OPTIONS, type MetaPeriodKey } from "@/lib/meta-metrics";
 // active period reads at a glance (the agency-dashboard convention).
 export function MetaPeriodToggle({ value }: { value: MetaPeriodKey }) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
@@ -17,7 +18,7 @@ export function MetaPeriodToggle({ value }: { value: MetaPeriodKey }) {
     const params = new URLSearchParams(searchParams);
     params.set("mp", key);
     startTransition(() => {
-      router.replace(`/?${params.toString()}`, { scroll: false });
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     });
   }
 
