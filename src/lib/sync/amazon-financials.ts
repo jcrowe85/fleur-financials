@@ -220,24 +220,6 @@ export async function syncAmazonFinancials(daysBack = 7): Promise<AmazonFinancia
         },
       });
 
-      // Store ad costs in FactAdSpendDaily
-      if (fin.adCost > 0) {
-        await db.factAdSpendDaily.upsert({
-          where: { date_channel: { date: dbDate, channel: "amazon" } },
-          update: { spend: fin.adCost },
-          create: {
-            date: dbDate,
-            channel: "amazon",
-            spend: fin.adCost,
-            impressions: 0,
-            clicks: 0,
-            conversions: 0,
-            attributedRevenue: 0,
-            currency: "USD",
-          },
-        });
-      }
-
       daysProcessed++;
       if (i < daysBack - 1) await new Promise((r) => setTimeout(r, 500));
     }

@@ -363,15 +363,15 @@ export async function getDashboardPeriods(channel?: string | null): Promise<Peri
 
   async function getAdCost(from: Date, to: Date): Promise<number | null> {
     // Map sales channels to their ad platform channels.
-    // shopify ← meta + tiktok (DTC social); amazon ← amazon_ads; null ← all.
+    // shopify ← meta + tiktok (DTC social); amazon ← amazon_ads; null ← all known ad channels.
     const adChannels =
       channel === "shopify" ? ["meta", "tiktok"] :
       channel === "amazon" ? ["amazon_ads"] :
-      null;
+      ["meta", "tiktok", "amazon_ads"];
     const rows = await db.factAdSpendDaily.findMany({
       where: {
         date: { gte: from, lte: to },
-        ...(adChannels ? { channel: { in: adChannels } } : {}),
+        channel: { in: adChannels },
       },
     });
     if (rows.length === 0) return null;

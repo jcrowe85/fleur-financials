@@ -15,6 +15,10 @@
     {
       "path": "/api/sync/amazon-financials?days=7",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/sync/amazon-ads?days=7",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

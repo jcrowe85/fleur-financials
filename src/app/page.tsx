@@ -152,8 +152,9 @@ export default async function Home({ searchParams }: PageProps) {
               financial events (refund amount, not just units).
             </p>
             <p>
-              <span className="font-medium text-foreground">Ad cost</span> — connect Amazon Ads
-              (and TikTok / Meta) in Windsor.
+              <span className="font-medium text-foreground">Ad cost</span> — Amazon Ads syncs
+              automatically (two-phase: submit → download ~15 min later). Meta ad cost requires
+              a valid Meta access token.
             </p>
             <p>
               <span className="font-medium text-foreground">Est. payout</span> — settlement report
