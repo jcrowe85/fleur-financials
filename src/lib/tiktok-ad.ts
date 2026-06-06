@@ -1,4 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "child_process";
+import { mkdtemp, rm, writeFile, readFile } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
+import { promisify } from "util";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ffmpegPath: string = require("ffmpeg-static");
+
+const execFileAsync = promisify(execFile);
 
 const GRAPH = "https://graph.facebook.com/v20.0";
 const RAPID_HOST =
@@ -30,20 +39,34 @@ export async function downloadTiktok(url: string): Promise<Buffer> {
   return Buffer.from(await vr.arrayBuffer());
 }
 
-// ── 2. Transcribe (send mp4 directly — Whisper accepts video) ─────────────────
+// ── 2. Transcribe — extract audio first (mono 16kHz mp3 ≈ 500 KB/min) ────────
 
-export async function transcribe(buf: Buffer): Promise<string> {
-  const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(buf)], { type: "video/mp4" }), "video.mp4");
-  form.append("model", "whisper-1");
-  form.append("response_format", "json");
-  const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${req("OPENAI_API_KEY")}` },
-    body: form,
-  });
-  if (!r.ok) throw new Error(`Whisper ${r.status}: ${await r.text().then((t) => t.slice(0, 300))}`);
-  return ((await r.json()) as { text?: string }).text?.trim() ?? "";
+export async function transcribe(videoBuf: Buffer): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "tiktok-"));
+  const videoPath = join(dir, "video.mp4");
+  const audioPath = join(dir, "audio.mp3");
+  try {
+    await writeFile(videoPath, videoBuf);
+    await execFileAsync(ffmpegPath, [
+      "-y", "-i", videoPath,
+      "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k",
+      audioPath,
+    ]);
+    const audioBuf = await readFile(audioPath);
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(audioBuf)], { type: "audio/mpeg" }), "audio.mp3");
+    form.append("model", "whisper-1");
+    form.append("response_format", "json");
+    const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${req("OPENAI_API_KEY")}` },
+      body: form,
+    });
+    if (!r.ok) throw new Error(`Whisper ${r.status}: ${await r.text().then((t) => t.slice(0, 300))}`);
+    return ((await r.json()) as { text?: string }).text?.trim() ?? "";
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 // ── 3. Generate ad copy ───────────────────────────────────────────────────────
