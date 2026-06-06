@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { formatInTimeZone } from "date-fns-tz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DailyTable } from "@/components/DailyTable";
@@ -8,6 +7,7 @@ import { PeriodCards } from "@/components/PeriodCards";
 import { RangePicker } from "@/components/RangePicker";
 import { SalesChart } from "@/components/SalesChart";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { SyncCountdown } from "@/components/SyncCountdown";
 import {
   defaultRange,
   getDashboardPeriods,
@@ -32,7 +32,7 @@ const currencyFmtCents = new Intl.NumberFormat("en-US", {
 const numberFmt = new Intl.NumberFormat("en-US");
 
 interface PageProps {
-  searchParams: Promise<{ days?: string; from?: string; to?: string; channel?: string }>;
+  searchParams: Promise<{ days?: string; from?: string; to?: string; channel?: string; mp?: string }>;
 }
 
 function rangeFromParams(params: Awaited<PageProps["searchParams"]>): {
@@ -93,15 +93,10 @@ export default async function Home({ searchParams }: PageProps) {
               ) : (
                 " · No sync runs yet"
               )}
+              <SyncCountdown />
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Link
-              href="/admin/syncs"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Sync history →
-            </Link>
             <RangePicker />
           </div>
         </header>

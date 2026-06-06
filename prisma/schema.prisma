@@ -129,6 +129,65 @@ model FactAdSpendDaily {
 }
 
 // ─────────────────────────────────────────────
+// META ADS HIERARCHY (agency-grade dashboard)
+// ─────────────────────────────────────────────
+
+// Dimension table: one row per campaign / ad set / ad. Holds the hierarchy
+// links plus the *current* status & budget (overwritten on every sync). The
+// id is Meta's own object id so insight rows join straight to it.
+model MetaEntity {
+  id               String   @id // Meta campaign/adset/ad id
+  level            String   // "campaign" | "adset" | "ad"
+  name             String
+  campaignId       String?  // parent campaign (null for campaign rows)
+  adsetId          String?  // parent ad set (null for campaign/adset rows)
+  status           String?  // configured status (ACTIVE / PAUSED …)
+  effectiveStatus  String?  // delivery status incl. parent/limit reasons
+  objective        String?  // campaign objective (campaign rows only)
+  dailyBudget      Decimal? @db.Decimal(12, 2)
+  lifetimeBudget   Decimal? @db.Decimal(12, 2)
+  creativeThumbUrl String?  // ad-level creative thumbnail
+  syncedAt         DateTime @default(now())
+
+  @@index([level])
+  @@index([campaignId])
+  @@index([adsetId])
+}
+
+// Fact table: one row per (date, level, entity). `level` includes "account"
+// with the sentinel entityId "account" so the account rollup, the existing
+// ad-cost pipeline, and the drill-down all read from one source.
+model MetaInsightDaily {
+  id               String   @id @default(cuid())
+  date             DateTime @db.Date
+  level            String   // "account" | "campaign" | "adset" | "ad"
+  entityId         String   // Meta object id, or "account"
+  spend            Decimal  @db.Decimal(12, 2)
+  impressions      Int
+  reach            Int      // non-additive across days; see meta-metrics.ts
+  clicks           Int
+  inlineLinkClicks Int
+  outboundClicks   Int
+  purchases        Int
+  purchaseValue    Decimal  @db.Decimal(12, 2)
+  addToCart        Int
+  initiateCheckout Int
+  landingPageViews Int
+  videoViews3s     Int      // 3-second video plays (hook rate numerator)
+  thruplays        Int      // ThruPlays (hold rate numerator)
+  videoP25         Int
+  videoP50         Int
+  videoP75         Int
+  videoP100        Int
+  currency         String   @default("USD")
+  syncedAt         DateTime @default(now())
+
+  @@unique([date, level, entityId])
+  @@index([date, level])
+  @@index([entityId])
+}
+
+// ─────────────────────────────────────────────
 // SYNC LOG
 // ─────────────────────────────────────────────
 

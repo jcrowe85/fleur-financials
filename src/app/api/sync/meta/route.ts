@@ -4,7 +4,9 @@ import { syncMeta } from "@/lib/sync/meta";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Ad-level insights + activity-bounded metadata for the cron window (days=2)
+// runs in ~20s, but allow headroom for traffic spikes / larger manual ranges.
+export const maxDuration = 120;
 
 async function handle(req: Request) {
   if (!isCronAuthorized(req)) {
