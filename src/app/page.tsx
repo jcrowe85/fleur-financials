@@ -75,31 +75,23 @@ export default async function Home({ searchParams }: PageProps) {
     <div className="min-h-screen bg-background text-foreground">
       <AutoRefresh />
       <div className="mx-auto max-w-[1600px] px-4 py-4 space-y-5 sm:px-6 sm:py-6 sm:space-y-6">
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between border-b pb-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Fleur Sales</h1>
-            <p className="text-lg font-medium tabular-nums mt-1">
-              {fromLabel} <span className="text-muted-foreground">→</span> {toLabel}
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              {metrics.range.daysWithData} of {metrics.range.days} days with data
-              {lastSync ? (
-                <>
-                  {" · Last sync: "}
-                  {lastSync.finishedAt
-                    ? formatInTimeZone(lastSync.finishedAt, "UTC", "MMM d, HH:mm 'UTC'")
-                    : "running…"}
-                </>
-              ) : (
-                " · No sync runs yet"
-              )}
-              <SyncCountdown />
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3 border-b pb-3">
+          <p className="text-[11px] text-muted-foreground truncate min-w-0">
+            {metrics.range.daysWithData}/{metrics.range.days} days with data
+            {lastSync ? (
+              <>
+                {" · "}
+                {lastSync.finishedAt
+                  ? formatInTimeZone(lastSync.finishedAt, "UTC", "MMM d, HH:mm 'UTC'")
+                  : "syncing…"}
+              </>
+            ) : null}
+            <SyncCountdown />
+          </p>
+          <div className="shrink-0">
             <RangePicker />
           </div>
-        </header>
+        </div>
 
         {lastSync?.status === "error" || lastSync?.status === "partial" ? (
           <Card

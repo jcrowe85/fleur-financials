@@ -39,7 +39,7 @@ export function RangePicker() {
 
   return (
     <Select value={current} onValueChange={onChange}>
-      <SelectTrigger className="w-[180px]" disabled={isPending}>
+      <SelectTrigger className="w-[140px] h-8 text-sm" disabled={isPending}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

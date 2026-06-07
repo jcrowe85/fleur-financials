@@ -137,7 +137,7 @@ export function PeriodCards({ periods, label, accent = "indigo", collapsible = f
       {/* Mobile: horizontal snap-scroll carousel; desktop: grid */}
       <div className={cn(
         // Mobile carousel
-        "flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0",
+        "flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-2 -mx-4 pl-5 pr-4 sm:mx-0 sm:px-0 sm:pb-0",
         // Desktop grid
         "sm:grid sm:overflow-visible sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
         !open && collapsible && "hidden",
