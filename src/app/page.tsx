@@ -74,7 +74,7 @@ export default async function Home({ searchParams }: PageProps) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <AutoRefresh />
-      <div className="mx-auto max-w-[1600px] px-6 py-6 space-y-6">
+      <div className="mx-auto max-w-[1600px] px-4 py-4 space-y-5 sm:px-6 sm:py-6 sm:space-y-6">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between border-b pb-4">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Fleur Sales</h1>

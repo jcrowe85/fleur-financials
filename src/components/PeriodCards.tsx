@@ -113,7 +113,7 @@ function PrimaryMetric({ p, t }: { p: PeriodCard; t: PeriodTotals }) {
 }
 
 export function PeriodCards({ periods, label, accent = "indigo", collapsible = false }: PeriodCardsProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
 
   return (
     <section className="space-y-2">
@@ -123,21 +123,36 @@ export function PeriodCards({ periods, label, accent = "indigo", collapsible = f
           <span className="text-base font-semibold tracking-tight text-foreground">
             {label}
           </span>
+          {collapsible && (
+            <button
+              onClick={() => setOpen(o => !o)}
+              className="ml-auto text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {open ? "Hide" : "Show"}
+            </button>
+          )}
         </div>
       ) : null}
 
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 lg:grid-cols-3">
+      {/* Mobile: horizontal snap-scroll carousel; desktop: grid */}
+      <div className={cn(
+        // Mobile carousel
+        "flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0",
+        // Desktop grid
+        "sm:grid sm:overflow-visible sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
+        !open && collapsible && "hidden",
+      )}>
         {periods.map((p) => {
           const t = p.current;
           return (
             <Card
               key={p.key}
               className={cn(
-                "gap-0 py-0",
+                "gap-0 py-0 snap-start shrink-0 w-[82vw] sm:w-auto",
                 p.isForecast && "border-sky-500/30 bg-sky-500/[0.03]",
               )}
             >
-              <CardContent className="px-5 py-5 space-y-4">
+              <CardContent className="px-4 py-4 space-y-4 sm:px-5 sm:py-5">
                 {/* Header */}
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -148,30 +163,8 @@ export function PeriodCards({ periods, label, accent = "indigo", collapsible = f
                   </span>
                 </div>
 
-                {collapsible ? (
-                  <div className="space-y-4">
-                    <button
-                      onClick={() => setOpen(o => !o)}
-                      className="w-full text-left"
-                    >
-                      <div className="flex items-end justify-between gap-2">
-                        <PrimaryMetric p={p} t={t} />
-                        <span className={cn(
-                          "text-muted-foreground text-xs mb-0.5 transition-transform inline-block select-none",
-                          open && "rotate-180",
-                        )}>
-                          ▼
-                        </span>
-                      </div>
-                    </button>
-                    {open && <SubMetrics t={t} showRefunds={true} />}
-                  </div>
-                ) : (
-                  <>
-                    <PrimaryMetric p={p} t={t} />
-                    <SubMetrics t={t} showRefunds={true} />
-                  </>
-                )}
+                <PrimaryMetric p={p} t={t} />
+                <SubMetrics t={t} showRefunds={true} />
               </CardContent>
             </Card>
           );
