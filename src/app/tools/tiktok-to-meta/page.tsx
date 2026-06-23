@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { AdCopy, MetaAdset, MetaCampaign } from "@/lib/tiktok-ad";
+import type { AdCopy, MetaCampaign } from "@/lib/tiktok-ad";
 
 const CTA_OPTIONS = [
   "SHOP_NOW", "LEARN_MORE", "SIGN_UP", "SUBSCRIBE", "GET_OFFER",
@@ -42,28 +42,32 @@ export default function TiktokToMetaPage() {
   const [adName, setAdName] = useState("");
   const [cta, setCta] = useState("SHOP_NOW");
   const [destUrl, setDestUrl] = useState("");
-  const [adsetId, setAdsetId] = useState("");
-  const [adsets, setAdsets] = useState<MetaAdset[]>([]);
+  const [dailyBudget, setDailyBudget] = useState("20");
+  const [campaignId, setCampaignId] = useState("");
   const [campaigns, setCampaigns] = useState<MetaCampaign[]>([]);
-  const [adsetsLoaded, setAdsetsLoaded] = useState(false);
+  const [campaignsLoaded, setCampaignsLoaded] = useState(false);
+  const [campaignsError, setCampaignsError] = useState("");
 
   // Publish result
   const [adUrl, setAdUrl] = useState("");
 
   const urlRef = useRef<HTMLInputElement>(null);
 
-  // Load campaigns + adsets when we enter the ready phase
+  // Load campaigns when we enter the ready phase
   useEffect(() => {
-    if (phase !== "ready" || adsetsLoaded) return;
-    Promise.all([
-      fetch("/api/tools/tiktok-ad/adsets").then((r) => r.json()),
-      fetch("/api/tools/tiktok-ad/campaigns").then((r) => r.json()),
-    ]).then(([a, c]) => {
-      if (a.ok) setAdsets(a.adsets);
-      if (c.ok) setCampaigns(c.campaigns);
-      setAdsetsLoaded(true);
-    });
-  }, [phase, adsetsLoaded]);
+    if (phase !== "ready" || campaignsLoaded) return;
+    fetch("/api/tools/tiktok-ad/campaigns")
+      .then((r) => r.json())
+      .then((c) => {
+        if (c.ok) setCampaigns(c.campaigns);
+        else setCampaignsError(c.error ?? "Failed to load campaigns");
+      })
+      .catch((e) => setCampaignsError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setCampaignsLoaded(true));
+  }, [phase, campaignsLoaded]);
+
+  // Only active campaigns are valid targets for a new ad.
+  const activeCampaigns = campaigns.filter((c) => c.effective_status === "ACTIVE");
 
   async function handleGenerate() {
     if (!tiktokUrl.trim()) return;
@@ -91,7 +95,7 @@ export default function TiktokToMetaPage() {
   }
 
   async function handlePublish() {
-    if (!result || !adsetId || !destUrl.trim()) return;
+    if (!result || !campaignId || !destUrl.trim()) return;
     setPhase("publishing");
     setError("");
     try {
@@ -100,13 +104,14 @@ export default function TiktokToMetaPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           video_id: result.video_id,
-          adset_id: adsetId,
+          campaign_id: campaignId,
           ad_name: adName,
           primary_text: primaryText,
           headline,
           description,
           destination_url: destUrl,
           cta_type: cta,
+          daily_budget: Number(dailyBudget) || 20,
         }),
       });
       const json = (await r.json()) as { ok: boolean; url?: string; error?: string };
@@ -125,7 +130,8 @@ export default function TiktokToMetaPage() {
     setError("");
     setResult(null);
     setAdUrl("");
-    setAdsetsLoaded(false);
+    setCampaignsLoaded(false);
+    setCampaignsError("");
     setTimeout(() => urlRef.current?.focus(), 50);
   }
 
@@ -249,14 +255,28 @@ export default function TiktokToMetaPage() {
             <CardTitle className="text-sm font-medium">3. Ad setup</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Ad name</label>
-              <input
-                value={adName}
-                onChange={(e) => setAdName(e.target.value)}
-                disabled={isPublishing || phase === "done"}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Ad name</label>
+                <input
+                  value={adName}
+                  onChange={(e) => setAdName(e.target.value)}
+                  disabled={isPublishing || phase === "done"}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Daily budget ($)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={dailyBudget}
+                  onChange={(e) => setDailyBudget(e.target.value)}
+                  disabled={isPublishing || phase === "done"}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -287,30 +307,37 @@ export default function TiktokToMetaPage() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium">Ad set</label>
-              {!adsetsLoaded ? (
-                <p className="text-xs text-muted-foreground animate-pulse">Loading ad sets…</p>
+              <label className="text-xs font-medium">Campaign</label>
+              {!campaignsLoaded ? (
+                <p className="text-xs text-muted-foreground animate-pulse">Loading campaigns…</p>
+              ) : campaignsError ? (
+                <p className="text-xs text-destructive font-mono">
+                  Couldn’t load campaigns: {campaignsError}
+                </p>
               ) : (
                 <select
-                  value={adsetId}
-                  onChange={(e) => setAdsetId(e.target.value)}
+                  value={campaignId}
+                  onChange={(e) => setCampaignId(e.target.value)}
                   disabled={isPublishing || phase === "done"}
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 >
-                  <option value="">— Select an ad set —</option>
-                  {adsets.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.campaign_name} › {a.name}
+                  <option value="">— Select a campaign —</option>
+                  {activeCampaigns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
                     </option>
                   ))}
                 </select>
               )}
+              <p className="text-[10px] text-muted-foreground">
+                A new ad set will be cloned from an existing one in this campaign to hold the ad.
+              </p>
             </div>
 
             {phase !== "done" && (
               <button
                 onClick={handlePublish}
-                disabled={!adsetId || !destUrl.trim() || isPublishing}
+                disabled={!campaignId || !destUrl.trim() || isPublishing}
                 className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
               >
                 {isPublishing ? "Launching ad…" : "Launch ad"}

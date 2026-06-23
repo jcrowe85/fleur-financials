@@ -200,6 +200,26 @@ async function waitVideoReady(videoId: string, timeoutMs = 180_000): Promise<voi
 
 // ── 5. Create creative ────────────────────────────────────────────────────────
 
+// Meta requires a thumbnail (image_hash or image_url) in video_data. It auto-
+// generates thumbnails once the video is processed — fetch the preferred one.
+async function getVideoThumbnail(videoId: string, retries = 5): Promise<string> {
+  const token = req("META_ACCESS_TOKEN");
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const r = await fetch(
+      `${GRAPH}/${videoId}/thumbnails?fields=uri,is_preferred&access_token=${token}`,
+    );
+    if (r.ok) {
+      const d = (await r.json()) as { data?: { uri: string; is_preferred?: boolean }[] };
+      const thumbs = d.data ?? [];
+      const chosen = thumbs.find((t) => t.is_preferred) ?? thumbs[0];
+      if (chosen?.uri) return chosen.uri;
+    }
+    // Thumbnails can lag slightly behind "ready" status — back off and retry.
+    await new Promise((res) => setTimeout(res, 2000));
+  }
+  throw new Error(`No thumbnail available for video ${videoId} after ${retries} attempts`);
+}
+
 export async function createCreative(opts: {
   name: string;
   video_id: string;
@@ -215,6 +235,7 @@ export async function createCreative(opts: {
 
   const videoData: Record<string, unknown> = {
     video_id: opts.video_id,
+    image_url: await getVideoThumbnail(opts.video_id),
     title: opts.headline,
     message: opts.primary_text,
     call_to_action: {
@@ -262,6 +283,63 @@ export async function createAd(opts: {
   return ((await r.json()) as { id: string }).id;
 }
 
+// ── 6b. Clone a reference ad set within a campaign for the new ad ──────────────
+// We never drop the ad into an existing ad set. Instead we duplicate one of the
+// campaign's ad sets (without its ads) so the new ad lands in a fresh ad set that
+// inherits the reference's targeting, budget, and optimization settings.
+
+export async function cloneAdsetForCampaign(opts: {
+  campaign_id: string;
+  name: string;
+  /** Daily budget in dollars to set on the clone (overrides the reference's budget). */
+  daily_budget_dollars?: number;
+}): Promise<string> {
+  const token = req("META_ACCESS_TOKEN");
+
+  // Pick a reference ad set in the chosen campaign — prefer an active one.
+  const adsets = await listAdsets();
+  const inCampaign = adsets.filter((a) => a.campaign_id === opts.campaign_id);
+  if (inCampaign.length === 0)
+    throw new Error(
+      "This campaign has no ad set to use as a template. Create at least one ad set in it first.",
+    );
+  const reference = inCampaign.find((a) => a.effective_status === "ACTIVE") ?? inCampaign[0];
+
+  // Duplicate it without its ads (deep_copy=false) so we get an empty ad set.
+  const copyRes = await fetch(`${GRAPH}/${reference.id}/copies`, {
+    method: "POST",
+    body: new URLSearchParams({
+      deep_copy: "false",
+      status_option: "ACTIVE",
+      access_token: token,
+    }),
+  });
+  if (!copyRes.ok)
+    throw new Error(`Ad set copy failed ${copyRes.status}: ${await copyRes.text().then((t) => t.slice(0, 400))}`);
+  const copied = (await copyRes.json()) as { copied_adset_id?: string };
+  if (!copied.copied_adset_id)
+    throw new Error(`Ad set copy returned no id: ${JSON.stringify(copied)}`);
+  const newAdsetId = copied.copied_adset_id;
+
+  // Rename the copy so it's identifiable, and override its daily budget.
+  // The clone inherits the reference's budget (which may have been scaled up),
+  // so we reset it to the requested amount. Only applies to ad-set-level (ABO)
+  // budgets — CBO ad sets have no daily_budget (budget lives on the campaign),
+  // and trying to set one would be rejected.
+  const updateParams = new URLSearchParams({ name: opts.name, access_token: token });
+  if (opts.daily_budget_dollars != null && reference.daily_budget) {
+    updateParams.set("daily_budget", String(Math.round(opts.daily_budget_dollars * 100)));
+  }
+  const updateRes = await fetch(`${GRAPH}/${newAdsetId}`, {
+    method: "POST",
+    body: updateParams,
+  });
+  if (!updateRes.ok)
+    throw new Error(`Ad set update failed ${updateRes.status}: ${await updateRes.text().then((t) => t.slice(0, 300))}`);
+
+  return newAdsetId;
+}
+
 // ── 7. List campaigns / ad sets ───────────────────────────────────────────────
 
 export interface MetaCampaign {
@@ -278,6 +356,8 @@ export interface MetaAdset {
   effective_status: string;
   campaign_id: string;
   campaign_name: string;
+  /** Ad-set-level daily budget in minor units (cents). Empty for CBO ad sets. */
+  daily_budget: string;
 }
 
 async function fetchAllPages<T>(initialUrl: string): Promise<T[]> {
@@ -313,7 +393,7 @@ export async function listAdsets(): Promise<MetaAdset[]> {
   const url =
     `${GRAPH}/act_${acct}/adsets?` +
     new URLSearchParams({
-      fields: "id,name,status,effective_status,campaign{id,name}",
+      fields: "id,name,status,effective_status,daily_budget,campaign{id,name}",
       limit: "200",
       access_token: token,
     });
@@ -322,6 +402,7 @@ export async function listAdsets(): Promise<MetaAdset[]> {
     name: string;
     status: string;
     effective_status: string;
+    daily_budget?: string;
     campaign?: { id: string; name: string };
   }>(url);
   const rows = raw.map((a) => ({
@@ -331,6 +412,7 @@ export async function listAdsets(): Promise<MetaAdset[]> {
     effective_status: a.effective_status,
     campaign_id: a.campaign?.id ?? "",
     campaign_name: a.campaign?.name ?? "",
+    daily_budget: a.daily_budget ?? "",
   }));
   return rows.sort((a, b) =>
     a.campaign_name.localeCompare(b.campaign_name) || a.name.localeCompare(b.name),
