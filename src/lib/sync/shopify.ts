@@ -201,6 +201,16 @@ export async function syncShopify(
 
     await projectShopifyToFact(daysBack);
 
+    // Intraday hourly buckets — best-effort, never fail the daily sync over it.
+    try {
+      await syncShopifyHourly();
+    } catch (err) {
+      failures.push({
+        date: "hourly",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     const status = failures.length === 0 ? "success" : daysSucceeded > 0 ? "partial" : "error";
     await db.syncLog.update({
       where: { id: log.id },
@@ -223,6 +233,88 @@ export async function syncShopify(
     });
     throw err;
   }
+}
+
+// ─── Hourly sales (intraday pace) ─────────────────────────────────────────────
+// Populates FactSalesHourly for a short rolling window so the dashboard can
+// compare today-so-far against the prior day through the same time of day.
+
+const HOURLY_WINDOW_DAYS = 3; // today + 2 prior days is plenty for the pace card
+
+// ShopifyQL's HOUR_TIMESTAMP comes back as a UTC instant (e.g. 2026-06-22T07:00:00Z).
+// Re-bucket it into the business timezone so hours align to the business day.
+function hourBucketOf(hourTs: string | undefined): { dateStr: string; hour: number } | null {
+  if (!hourTs) return null;
+  const dt = new Date(hourTs);
+  if (Number.isNaN(dt.getTime())) return null;
+  return {
+    dateStr: formatInTimeZone(dt, BUSINESS_TZ, "yyyy-MM-dd"),
+    hour: Number(formatInTimeZone(dt, BUSINESS_TZ, "H")),
+  };
+}
+
+export async function syncShopifyHourly(): Promise<number> {
+  const domain = process.env.SHOPIFY_STORE_DOMAIN!;
+  const todayPdt = businessDateOf(Date.now());
+  const startPdt = businessDateOf(Date.now() - (HOURLY_WINDOW_DAYS - 1) * 86_400_000);
+
+  // Sales + orders per hour, and units per hour derived from variant gross/price.
+  const [salesRows, variantRows] = await Promise.all([
+    shopifyqlQuery(
+      `FROM sales SHOW gross_sales, net_sales, orders TIMESERIES hour SINCE ${startPdt} UNTIL ${todayPdt}`,
+    ),
+    shopifyqlQuery(
+      `FROM sales SHOW gross_sales TIMESERIES hour GROUP BY product_variant_id SINCE ${startPdt} UNTIL ${todayPdt}`,
+    ).catch(() => [] as ShopifyqlRow[]),
+  ]);
+
+  const variantMeta = getVariantMeta();
+  const unitsByBucket = new Map<string, number>();
+  for (const r of variantRows) {
+    const b = hourBucketOf(r.hour);
+    const meta = variantMeta.get(r.product_variant_id);
+    const gross = parseFloat(r.gross_sales ?? "0") || 0;
+    if (!b || !meta?.price || gross <= 0) continue;
+    const key = `${b.dateStr}|${b.hour}`;
+    unitsByBucket.set(key, (unitsByBucket.get(key) ?? 0) + gross / meta.price);
+  }
+
+  let upserted = 0;
+  for (const row of salesRows) {
+    const b = hourBucketOf(row.hour);
+    if (!b) continue;
+    const [y, m, d] = b.dateStr.split("-").map(Number);
+    const dbDate = new Date(Date.UTC(y, m - 1, d));
+    const grossSales = parseFloat(row.gross_sales ?? "0") || 0;
+    const netSales = parseFloat(row.net_sales ?? "0") || 0;
+    const orders = Math.round(parseFloat(row.orders ?? "0") || 0);
+    const units = Math.round(unitsByBucket.get(`${b.dateStr}|${b.hour}`) ?? 0);
+
+    await db.factSalesHourly.upsert({
+      where: {
+        date_hour_channel_subChannel: {
+          date: dbDate,
+          hour: b.hour,
+          channel: "shopify",
+          subChannel: domain,
+        },
+      },
+      update: { grossSales, netSales, units, orders },
+      create: {
+        date: dbDate,
+        hour: b.hour,
+        channel: "shopify",
+        subChannel: domain,
+        grossSales,
+        netSales,
+        units,
+        orders,
+        currency: "USD",
+      },
+    });
+    upserted++;
+  }
+  return upserted;
 }
 
 export async function projectShopifyToFact(daysBack: number): Promise<void> {

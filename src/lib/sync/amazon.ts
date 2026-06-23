@@ -267,6 +267,16 @@ export async function syncAmazon(
 
     await projectAmazonToFact(daysBack);
 
+    // Intraday hourly buckets — best-effort, never fail the daily sync over it.
+    try {
+      await syncAmazonHourly(accessToken);
+    } catch (err) {
+      failures.push({
+        date: "hourly",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     const status = failures.length === 0 ? "success" : daysSucceeded > 0 ? "partial" : "error";
     await db.syncLog.update({
       where: { id: log.id },
@@ -289,6 +299,104 @@ export async function syncAmazon(
     });
     throw err;
   }
+}
+
+// ─── Hourly sales (intraday pace) ─────────────────────────────────────────────
+// Populates FactSalesHourly so the dashboard can compare today-so-far against
+// the prior day through the same time of day. Note: Amazon's hourly data lags
+// (~1-2h), so the current hour can read low until it catches up.
+
+const HOURLY_WINDOW_DAYS = 2; // today + yesterday is enough for the pace card
+
+interface HourBucket {
+  dateStr: string;
+  hour: number;
+  grossSales: number;
+  orders: number;
+  units: number;
+}
+
+async function fetchHourlyAmazon(pdtDateStr: string, accessToken: string): Promise<HourBucket[]> {
+  const start = tzMidnight(pdtDateStr);
+  const isToday = pdtDateStr === businessDateOf(Date.now());
+  const end = isToday
+    ? new Date(Date.now() - 2 * 60_000) // 2min lag required by Amazon
+    : new Date(start.getTime() + 86_400_000);
+  const startStr = start.toISOString().replace(/\.\d+Z$/, "Z");
+  const endStr = end.toISOString().replace(/\.\d+Z$/, "Z");
+
+  const { url, headers } = signedGet("/sales/v1/orderMetrics", {
+    marketplaceIds: MARKETPLACE_ID,
+    interval: `${startStr}--${endStr}`,
+    granularity: "Hour",
+    granularityTimeZone: BUSINESS_TZ,
+    buyerType: "All",
+  }, accessToken);
+
+  const res = await fetch(url, { headers });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Sales API (hourly) ${res.status}: ${text.slice(0, 200)}`);
+
+  const json = JSON.parse(text) as {
+    payload?: { interval: string; totalSales?: { amount: number }; orderCount?: number; unitCount?: number }[];
+  };
+
+  const buckets: HourBucket[] = [];
+  for (const p of json.payload ?? []) {
+    // interval looks like "2026-06-23T00:00:00-07:00--2026-06-23T01:00:00-07:00";
+    // parse the start instant and re-bucket into the business timezone.
+    const startIso = p.interval?.split("--")[0];
+    if (!startIso) continue;
+    const dt = new Date(startIso);
+    if (Number.isNaN(dt.getTime())) continue;
+    buckets.push({
+      dateStr: formatInTimeZone(dt, BUSINESS_TZ, "yyyy-MM-dd"),
+      hour: Number(formatInTimeZone(dt, BUSINESS_TZ, "H")),
+      grossSales: p.totalSales?.amount ?? 0,
+      orders: p.orderCount ?? 0,
+      units: p.unitCount ?? 0,
+    });
+  }
+  return buckets;
+}
+
+export async function syncAmazonHourly(accessToken: string): Promise<number> {
+  let upserted = 0;
+  for (let i = 0; i < HOURLY_WINDOW_DAYS; i++) {
+    const dateStr = businessDateOf(Date.now() - i * 86_400_000);
+    const buckets = await fetchHourlyAmazon(dateStr, accessToken);
+    for (const b of buckets) {
+      const [y, m, d] = b.dateStr.split("-").map(Number);
+      const dbDate = new Date(Date.UTC(y, m - 1, d));
+      await db.factSalesHourly.upsert({
+        where: {
+          date_hour_channel_subChannel: {
+            date: dbDate,
+            hour: b.hour,
+            channel: "amazon",
+            subChannel: "US",
+          },
+        },
+        // Amazon sync treats net = gross (matches the daily projection).
+        update: { grossSales: b.grossSales, netSales: b.grossSales, units: b.units, orders: b.orders },
+        create: {
+          date: dbDate,
+          hour: b.hour,
+          channel: "amazon",
+          subChannel: "US",
+          grossSales: b.grossSales,
+          netSales: b.grossSales,
+          units: b.units,
+          orders: b.orders,
+          currency: "USD",
+        },
+      });
+      upserted++;
+    }
+    // Sales API: 0.5 req/s
+    if (i < HOURLY_WINDOW_DAYS - 1) await new Promise((r) => setTimeout(r, 2_000));
+  }
+  return upserted;
 }
 
 export async function projectAmazonToFact(daysBack: number): Promise<void> {

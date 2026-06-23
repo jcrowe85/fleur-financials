@@ -267,7 +267,7 @@ export interface PeriodTotals {
 }
 
 export interface PeriodCard {
-  key: "today" | "yesterday" | "mtd" | "forecast" | "lastMonth";
+  key: "today" | "todayPace" | "yesterday" | "mtd" | "forecast" | "lastMonth";
   label: string;
   rangeLabel: string;
   current: PeriodTotals;
@@ -275,6 +275,7 @@ export interface PeriodCard {
   previousLabel: string;
   deltas: { grossSales: number | null; units: number | null; orders: number | null };
   isForecast?: boolean;
+  isPace?: boolean;
   forecastBasis?: { daysElapsed: number; daysInMonth: number };
 }
 
@@ -331,6 +332,62 @@ function monthLabel(date: Date): string {
 
 function dayLabel(date: Date): string {
   return formatInTimeZone(date, TZ, "MMM d");
+}
+
+// Current time-of-day in the business timezone, as an hour (0-23) and the
+// fraction of the current hour already elapsed (minutes/60).
+function businessNowHourFraction(): { hour: number; fraction: number } {
+  const now = new Date();
+  const hour = Number(formatInTimeZone(now, BUSINESS_TZ, "H"));
+  const minute = Number(formatInTimeZone(now, BUSINESS_TZ, "m"));
+  return { hour, fraction: minute / 60 };
+}
+
+// Sum FactSalesHourly for a day, up to a given hour. The current (last) hour can
+// be prorated: today's last hour is the live partial bucket (weight 1), while
+// the prior day's same hour is weighted by how far into the hour we are now —
+// so both days cover the same elapsed wall-clock time.
+async function getHourlyTotals(
+  date: Date,
+  throughHour: number,
+  lastHourWeight: number,
+  channel?: string | null,
+): Promise<PeriodTotals> {
+  const rows = await db.factSalesHourly.findMany({
+    where: {
+      date,
+      hour: { lte: throughHour },
+      ...(channel ? { channel } : {}),
+    },
+  });
+
+  let grossSales = 0;
+  let netSales = 0;
+  let units = 0;
+  let orders = 0;
+  for (const r of rows) {
+    const w = r.hour < throughHour ? 1 : lastHourWeight;
+    grossSales += Number(r.grossSales) * w;
+    netSales += Number(r.netSales) * w;
+    units += r.units * w;
+    orders += r.orders * w;
+  }
+
+  return {
+    grossSales,
+    netSales,
+    units,
+    orders,
+    avgOrderValue: orders > 0 ? netSales / orders : 0,
+    refundAmount: null,
+    refundCount: null,
+    cogs: null,
+    adCost: null,
+    shippingCost: null,
+    estPayout: null,
+    grossProfit: null,
+    netProfit: null,
+  };
 }
 
 export async function getDashboardPeriods(channel?: string | null): Promise<PeriodCard[]> {
@@ -399,6 +456,17 @@ export async function getDashboardPeriods(channel?: string | null): Promise<Peri
     getAdCost(monthBeforeLastStart, monthBeforeLastEnd),
   ]);
 
+  // Intraday pace: today through the current hour vs yesterday through the same
+  // time of day. Today's current hour is the live partial bucket (weight 1);
+  // yesterday's same hour is prorated by how far into the hour we are, so the
+  // two cover the same elapsed wall-clock time.
+  const { hour: nowHour, fraction: nowFraction } = businessNowHourFraction();
+  const [todayPaceT, yesterdayPaceT] = await Promise.all([
+    getHourlyTotals(today, nowHour, 1, channel),
+    getHourlyTotals(yesterday, nowHour, nowFraction, channel),
+  ]);
+  const paceTimeLabel = `as of ${formatInTimeZone(new Date(), BUSINESS_TZ, "h:mm a")}`;
+
   function makeDeltas(c: PeriodTotals, p: PeriodTotals) {
     return {
       grossSales: pctDelta(c.netSales, p.netSales),
@@ -453,6 +521,16 @@ export async function getDashboardPeriods(channel?: string | null): Promise<Peri
       previous: yesterdayT,
       previousLabel: "yesterday",
       deltas: makeDeltas(todayT, yesterdayT),
+    },
+    {
+      key: "todayPace",
+      label: "Today · pace",
+      rangeLabel: paceTimeLabel,
+      current: todayPaceT,
+      previous: yesterdayPaceT,
+      previousLabel: "yesterday by now",
+      deltas: makeDeltas(todayPaceT, yesterdayPaceT),
+      isPace: true,
     },
     {
       key: "yesterday",
