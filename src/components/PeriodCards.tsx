@@ -93,19 +93,6 @@ function SubMetrics({ t, showRefunds }: { t: PeriodTotals; showRefunds: boolean 
   );
 }
 
-// The pace card has no cost/profit data — it's a sales-pace signal — so show a
-// slim breakdown instead of rows of dashes: today's gross + units/orders, and
-// the prior-day baseline it's being compared against.
-function PaceSubMetrics({ t, prev, previousLabel }: { t: PeriodTotals; prev: PeriodTotals; previousLabel: string }) {
-  return (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-3 pt-3 border-t border-border/60">
-      <MetricTile label="Gross sales" value={fmtCurrency(t.grossSales)} />
-      <MetricTile label="Units / orders" value={fmtUnits(t)} />
-      <MetricTile label={previousLabel} value={fmtCurrency(prev.netSales)} wide />
-    </div>
-  );
-}
-
 function PrimaryMetric({ p, t }: { p: PeriodCard; t: PeriodTotals }) {
   return (
     <div>
@@ -152,7 +139,7 @@ export function PeriodCards({ periods, label, accent = "indigo", collapsible = f
         // Mobile carousel
         "flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-2 -mx-4 pl-5 pr-4 sm:mx-0 sm:px-0 sm:pb-0",
         // Desktop grid
-        "sm:grid sm:overflow-visible sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6",
+        "sm:grid sm:overflow-visible sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
         !open && collapsible && "hidden",
       )}>
         {periods.map((p) => {
@@ -177,11 +164,7 @@ export function PeriodCards({ periods, label, accent = "indigo", collapsible = f
                 </div>
 
                 <PrimaryMetric p={p} t={t} />
-                {p.isPace ? (
-                  <PaceSubMetrics t={t} prev={p.previous} previousLabel={p.previousLabel} />
-                ) : (
-                  <SubMetrics t={t} showRefunds={true} />
-                )}
+                <SubMetrics t={t} showRefunds={true} />
               </CardContent>
             </Card>
           );

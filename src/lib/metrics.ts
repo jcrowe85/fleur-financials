@@ -267,7 +267,7 @@ export interface PeriodTotals {
 }
 
 export interface PeriodCard {
-  key: "today" | "todayPace" | "yesterday" | "mtd" | "forecast" | "lastMonth";
+  key: "today" | "yesterday" | "mtd" | "forecast" | "lastMonth";
   label: string;
   rangeLabel: string;
   current: PeriodTotals;
@@ -275,7 +275,6 @@ export interface PeriodCard {
   previousLabel: string;
   deltas: { grossSales: number | null; units: number | null; orders: number | null };
   isForecast?: boolean;
-  isPace?: boolean;
   forecastBasis?: { daysElapsed: number; daysInMonth: number };
 }
 
@@ -456,16 +455,13 @@ export async function getDashboardPeriods(channel?: string | null): Promise<Peri
     getAdCost(monthBeforeLastStart, monthBeforeLastEnd),
   ]);
 
-  // Intraday pace: today through the current hour vs yesterday through the same
-  // time of day. Today's current hour is the live partial bucket (weight 1);
-  // yesterday's same hour is prorated by how far into the hour we are, so the
-  // two cover the same elapsed wall-clock time.
+  // Intraday pace baseline: yesterday through the same time of day. The Today
+  // card compares today-so-far against this instead of yesterday's full day, so
+  // the delta reads honestly (green when ahead) rather than red all morning.
+  // Yesterday's current hour is prorated by how far into the hour we are now, so
+  // both sides cover the same elapsed wall-clock time.
   const { hour: nowHour, fraction: nowFraction } = businessNowHourFraction();
-  const [todayPaceT, yesterdayPaceT] = await Promise.all([
-    getHourlyTotals(today, nowHour, 1, channel),
-    getHourlyTotals(yesterday, nowHour, nowFraction, channel),
-  ]);
-  const paceTimeLabel = `as of ${formatInTimeZone(new Date(), BUSINESS_TZ, "h:mm a")}`;
+  const yesterdayPaceT = await getHourlyTotals(yesterday, nowHour, nowFraction, channel);
 
   function makeDeltas(c: PeriodTotals, p: PeriodTotals) {
     return {
@@ -518,19 +514,9 @@ export async function getDashboardPeriods(channel?: string | null): Promise<Peri
       label: "Today",
       rangeLabel: dayLabel(today),
       current: todayT,
-      previous: yesterdayT,
-      previousLabel: "yesterday",
-      deltas: makeDeltas(todayT, yesterdayT),
-    },
-    {
-      key: "todayPace",
-      label: "Today · pace",
-      rangeLabel: paceTimeLabel,
-      current: todayPaceT,
       previous: yesterdayPaceT,
       previousLabel: "yesterday by now",
-      deltas: makeDeltas(todayPaceT, yesterdayPaceT),
-      isPace: true,
+      deltas: makeDeltas(todayT, yesterdayPaceT),
     },
     {
       key: "yesterday",
