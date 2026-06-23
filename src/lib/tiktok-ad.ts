@@ -254,7 +254,7 @@ export async function createCreative(opts: {
     }),
   });
   if (!r.ok)
-    throw new Error(`Creative create failed ${r.status}: ${await r.text().then((t) => t.slice(0, 400))}`);
+    throw new Error(`Creative create — ${metaErrorMessage(r.status, await r.text())}`);
   return ((await r.json()) as { id: string }).id;
 }
 
@@ -279,7 +279,7 @@ export async function createAd(opts: {
     }),
   });
   if (!r.ok)
-    throw new Error(`Ad create failed ${r.status}: ${await r.text().then((t) => t.slice(0, 400))}`);
+    throw new Error(`Ad create — ${metaErrorMessage(r.status, await r.text())}`);
   return ((await r.json()) as { id: string }).id;
 }
 
@@ -297,8 +297,8 @@ export async function cloneAdsetForCampaign(opts: {
   const token = req("META_ACCESS_TOKEN");
 
   // Pick a reference ad set in the chosen campaign — prefer an active one.
-  const adsets = await listAdsets();
-  const inCampaign = adsets.filter((a) => a.campaign_id === opts.campaign_id);
+  // Query just this campaign's ad sets (one call) rather than the whole account.
+  const inCampaign = await listCampaignAdsets(opts.campaign_id);
   if (inCampaign.length === 0)
     throw new Error(
       "This campaign has no ad set to use as a template. Create at least one ad set in it first.",
@@ -315,7 +315,7 @@ export async function cloneAdsetForCampaign(opts: {
     }),
   });
   if (!copyRes.ok)
-    throw new Error(`Ad set copy failed ${copyRes.status}: ${await copyRes.text().then((t) => t.slice(0, 400))}`);
+    throw new Error(`Ad set copy — ${metaErrorMessage(copyRes.status, await copyRes.text())}`);
   const copied = (await copyRes.json()) as { copied_adset_id?: string };
   if (!copied.copied_adset_id)
     throw new Error(`Ad set copy returned no id: ${JSON.stringify(copied)}`);
@@ -335,7 +335,7 @@ export async function cloneAdsetForCampaign(opts: {
     body: updateParams,
   });
   if (!updateRes.ok)
-    throw new Error(`Ad set update failed ${updateRes.status}: ${await updateRes.text().then((t) => t.slice(0, 300))}`);
+    throw new Error(`Ad set update — ${metaErrorMessage(updateRes.status, await updateRes.text())}`);
 
   return newAdsetId;
 }
@@ -360,12 +360,34 @@ export interface MetaAdset {
   daily_budget: string;
 }
 
+// Turn a Meta error body into a human-readable message. Rate-limit codes
+// (4 app-level, 17 user-level, 32 page-level, 613 custom) get a clear hint that
+// the ad account's API budget is exhausted and resets within ~1 hour.
+export function metaErrorMessage(status: number, body: string): string {
+  try {
+    const e = (JSON.parse(body) as {
+      error?: { code?: number; error_user_title?: string; error_user_msg?: string; message?: string };
+    }).error;
+    if (e) {
+      if ([4, 17, 32, 613].includes(e.code ?? 0)) {
+        const detail = e.error_user_msg ?? e.message ?? "";
+        return `Meta rate limit reached — the ad account has made too many API calls. This resets within about an hour; wait a few minutes and try again. ${detail}`.trim();
+      }
+      if (e.error_user_title) return `${e.error_user_title}: ${e.error_user_msg ?? e.message ?? ""}`.trim();
+      if (e.message) return e.message;
+    }
+  } catch {
+    // fall through to raw
+  }
+  return `Meta API ${status}: ${body.slice(0, 200)}`;
+}
+
 async function fetchAllPages<T>(initialUrl: string): Promise<T[]> {
   const out: T[] = [];
   let url: string | null = initialUrl;
   while (url) {
     const r = await fetch(url);
-    if (!r.ok) throw new Error(`Meta API ${r.status}: ${await r.text().then((t) => t.slice(0, 200))}`);
+    if (!r.ok) throw new Error(metaErrorMessage(r.status, await r.text()));
     const json = (await r.json()) as { data?: T[]; paging?: { next?: string } };
     if (json.data) out.push(...json.data);
     url = json.paging?.next ?? null;
@@ -387,36 +409,48 @@ export async function listCampaigns(): Promise<MetaCampaign[]> {
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+interface RawAdset {
+  id: string;
+  name: string;
+  status: string;
+  effective_status: string;
+  daily_budget?: string;
+  campaign?: { id: string; name: string };
+}
+
+const ADSET_FIELDS = "id,name,status,effective_status,daily_budget,campaign{id,name}";
+
+function mapAdsets(raw: RawAdset[]): MetaAdset[] {
+  return raw
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      status: a.status,
+      effective_status: a.effective_status,
+      campaign_id: a.campaign?.id ?? "",
+      campaign_name: a.campaign?.name ?? "",
+      daily_budget: a.daily_budget ?? "",
+    }))
+    .sort((a, b) => a.campaign_name.localeCompare(b.campaign_name) || a.name.localeCompare(b.name));
+}
+
 export async function listAdsets(): Promise<MetaAdset[]> {
   const token = req("META_ACCESS_TOKEN");
   const acct = req("META_AD_ACCOUNT_ID");
   const url =
     `${GRAPH}/act_${acct}/adsets?` +
-    new URLSearchParams({
-      fields: "id,name,status,effective_status,daily_budget,campaign{id,name}",
-      limit: "200",
-      access_token: token,
-    });
-  const raw = await fetchAllPages<{
-    id: string;
-    name: string;
-    status: string;
-    effective_status: string;
-    daily_budget?: string;
-    campaign?: { id: string; name: string };
-  }>(url);
-  const rows = raw.map((a) => ({
-    id: a.id,
-    name: a.name,
-    status: a.status,
-    effective_status: a.effective_status,
-    campaign_id: a.campaign?.id ?? "",
-    campaign_name: a.campaign?.name ?? "",
-    daily_budget: a.daily_budget ?? "",
-  }));
-  return rows.sort((a, b) =>
-    a.campaign_name.localeCompare(b.campaign_name) || a.name.localeCompare(b.name),
-  );
+    new URLSearchParams({ fields: ADSET_FIELDS, limit: "200", access_token: token });
+  return mapAdsets(await fetchAllPages<RawAdset>(url));
+}
+
+// Just the ad sets in one campaign — a single edge query instead of paging the
+// whole account's ad sets. Keeps the launcher's Meta API footprint small.
+export async function listCampaignAdsets(campaignId: string): Promise<MetaAdset[]> {
+  const token = req("META_ACCESS_TOKEN");
+  const url =
+    `${GRAPH}/${campaignId}/adsets?` +
+    new URLSearchParams({ fields: ADSET_FIELDS, limit: "200", access_token: token });
+  return mapAdsets(await fetchAllPages<RawAdset>(url));
 }
 
 export function adsManagerUrl(adId: string): string {
