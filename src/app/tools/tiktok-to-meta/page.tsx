@@ -41,7 +41,9 @@ export default function TiktokToMetaPage() {
   // Ad setup
   const [adName, setAdName] = useState("");
   const [cta, setCta] = useState("SHOP_NOW");
-  const [destUrl, setDestUrl] = useState("");
+  const [destUrl, setDestUrl] = useState(
+    "https://tryfleur.com/products/bloom-hair-scalp-serum-longform?ref=30486&variant=44826097221811",
+  );
   const [dailyBudget, setDailyBudget] = useState("20");
   const [campaignId, setCampaignId] = useState("");
   const [campaigns, setCampaigns] = useState<MetaCampaign[]>([]);
