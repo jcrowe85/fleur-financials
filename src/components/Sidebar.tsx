@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, History, Menu, Wand2, X } from "lucide-react";
+import { BarChart3, ExternalLink, Gift, History, Menu, Wand2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +11,7 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   prefix?: boolean;
+  external?: boolean;
 }
 
 function MetaBadge() {
@@ -37,6 +38,7 @@ const NAV: NavItem[] = [
 
 const TOOLS: NavItem[] = [
   { href: "/tools/tiktok-to-meta", label: "TikTok → Meta", icon: <TikTokBadge />, prefix: true },
+  { href: "https://fleur-gift-engine.vercel.app/login", label: "Gift Engine", icon: <Gift size={16} />, external: true },
 ];
 
 function isActive(pathname: string, item: NavItem): boolean {
@@ -44,18 +46,32 @@ function isActive(pathname: string, item: NavItem): boolean {
 }
 
 function NavLink({ item, pathname, onNavigate }: { item: NavItem; pathname: string; onNavigate?: () => void }) {
-  const active = isActive(pathname, item);
+  const active = !item.external && isActive(pathname, item);
+  const className = cn(
+    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+    active
+      ? "bg-muted text-foreground"
+      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+  );
+
+  if (item.external) {
+    return (
+      <a
+        href={item.href}
+        onClick={onNavigate}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+      >
+        <span className="shrink-0">{item.icon}</span>
+        {item.label}
+        <ExternalLink size={12} className="ml-auto shrink-0 text-muted-foreground/50" />
+      </a>
+    );
+  }
+
   return (
-    <Link
-      href={item.href}
-      onClick={onNavigate}
-      className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-        active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-      )}
-    >
+    <Link href={item.href} onClick={onNavigate} className={className}>
       <span className="shrink-0">{item.icon}</span>
       {item.label}
     </Link>
