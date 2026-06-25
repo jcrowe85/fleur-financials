@@ -116,6 +116,25 @@ const ASIN_COSTS: Record<string, number> = {
 
 // ─── Sales API ────────────────────────────────────────────────────────────────
 
+// Compute the [start, end) instant window for a business day's Sales API query.
+// Returns null when the window is degenerate — i.e. it's the current business
+// day but "now minus the 2-minute Amazon lag" is still before midnight, which
+// happens for the first ~2 minutes after the day rolls over. Callers treat a
+// null window as "no data yet" rather than firing an invalid (start > end) request.
+function salesWindow(pdtDateStr: string): { startStr: string; endStr: string } | null {
+  const start = tzMidnight(pdtDateStr);
+  const isToday = pdtDateStr === businessDateOf(Date.now());
+  // For today use now as end (live running total); for past days use next midnight.
+  const end = isToday
+    ? new Date(Date.now() - 2 * 60_000) // 2min lag required by Amazon
+    : new Date(start.getTime() + 86_400_000);
+  if (end.getTime() <= start.getTime()) return null;
+  return {
+    startStr: start.toISOString().replace(/\.\d+Z$/, "Z"),
+    endStr: end.toISOString().replace(/\.\d+Z$/, "Z"),
+  };
+}
+
 interface DaySales {
   date: string;
   grossSales: number;
@@ -124,16 +143,10 @@ interface DaySales {
 }
 
 async function fetchDaySales(pdtDateStr: string, accessToken: string): Promise<DaySales> {
-  const start = tzMidnight(pdtDateStr);
-  const isToday = pdtDateStr === businessDateOf(Date.now());
-
-  // For today use now as end (live running total); for past days use next midnight.
-  const end = isToday
-    ? new Date(Date.now() - 2 * 60_000) // 2min lag required by Amazon
-    : new Date(start.getTime() + 86_400_000);
-
-  const startStr = start.toISOString().replace(/\.\d+Z$/, "Z");
-  const endStr = end.toISOString().replace(/\.\d+Z$/, "Z");
+  const win = salesWindow(pdtDateStr);
+  // First ~2 minutes after midnight: today's window hasn't opened yet → no sales.
+  if (!win) return { date: pdtDateStr, grossSales: 0, orders: 0, units: 0 };
+  const { startStr, endStr } = win;
 
   const { url, headers } = signedGet("/sales/v1/orderMetrics", {
     marketplaceIds: MARKETPLACE_ID,
@@ -161,13 +174,9 @@ async function fetchDaySales(pdtDateStr: string, accessToken: string): Promise<D
 }
 
 async function fetchDayCogs(pdtDateStr: string, accessToken: string): Promise<number | null> {
-  const start = tzMidnight(pdtDateStr);
-  const isToday = pdtDateStr === businessDateOf(Date.now());
-  const end = isToday
-    ? new Date(Date.now() - 2 * 60_000)
-    : new Date(start.getTime() + 86_400_000);
-  const startStr = start.toISOString().replace(/\.\d+Z$/, "Z");
-  const endStr = end.toISOString().replace(/\.\d+Z$/, "Z");
+  const win = salesWindow(pdtDateStr);
+  if (!win) return null; // window not open yet (see fetchDaySales)
+  const { startStr, endStr } = win;
 
   let totalCogs = 0;
   for (const [asin, cost] of Object.entries(ASIN_COSTS)) {
@@ -317,13 +326,9 @@ interface HourBucket {
 }
 
 async function fetchHourlyAmazon(pdtDateStr: string, accessToken: string): Promise<HourBucket[]> {
-  const start = tzMidnight(pdtDateStr);
-  const isToday = pdtDateStr === businessDateOf(Date.now());
-  const end = isToday
-    ? new Date(Date.now() - 2 * 60_000) // 2min lag required by Amazon
-    : new Date(start.getTime() + 86_400_000);
-  const startStr = start.toISOString().replace(/\.\d+Z$/, "Z");
-  const endStr = end.toISOString().replace(/\.\d+Z$/, "Z");
+  const win = salesWindow(pdtDateStr);
+  if (!win) return []; // window not open yet (see fetchDaySales)
+  const { startStr, endStr } = win;
 
   const { url, headers } = signedGet("/sales/v1/orderMetrics", {
     marketplaceIds: MARKETPLACE_ID,
