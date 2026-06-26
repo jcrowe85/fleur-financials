@@ -224,3 +224,22 @@ model SyncLog {
 
   @@index([source, startedAt])
 }
+
+// ─────────────────────────────────────────────
+// GIFT ENGINE ALERTS
+// Error/alert feed pushed from the fleur-gift-engine app (sweep crashes, missed
+// gifts). Surfaced in the dashboard's notification bell + log.
+// ─────────────────────────────────────────────
+
+model GiftEngineAlert {
+  id        String    @id @default(cuid())
+  kind      String // sweep_crash | sweep_errors | gift_verify_miss | verify_crash
+  message   String // human-readable summary (the alert's details)
+  meta      Json? // raw alert payload
+  source    String    @default("gift-engine")
+  createdAt DateTime  @default(now()) // when the alert fired
+  readAt    DateTime? // null = unread
+
+  @@index([createdAt])
+  @@index([readAt])
+}

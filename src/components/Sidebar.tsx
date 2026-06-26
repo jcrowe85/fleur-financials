@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { BarChart3, ExternalLink, Gift, History, Menu, Wand2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/NotificationBell";
 
 interface NavItem {
   href: string;
@@ -116,8 +117,9 @@ export function Sidebar() {
     <>
       {/* ── Desktop: fixed left rail ── */}
       <aside className="hidden md:flex w-52 shrink-0 flex-col gap-1 border-r bg-card sticky top-0 h-screen p-3">
-        <div className="flex items-center gap-2 px-3 py-2 mb-2">
+        <div className="flex items-center justify-between px-3 py-2 mb-2">
           <span className="text-lg font-semibold tracking-tight">Fleur</span>
+          <NotificationBell />
         </div>
         <nav className="flex flex-col gap-0.5">
           <NavLinks pathname={pathname} />
@@ -127,13 +129,16 @@ export function Sidebar() {
       {/* ── Mobile: slim top bar ── */}
       <header className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b bg-card/95 backdrop-blur-sm px-4 h-12">
         <span className="text-base font-semibold tracking-tight">Fleur</span>
-        <button
-          onClick={() => setOpen(true)}
-          aria-label="Open menu"
-          className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-        >
-          <Menu size={20} />
-        </button>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <button
+            onClick={() => setOpen(true)}
+            aria-label="Open menu"
+            className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <Menu size={20} />
+          </button>
+        </div>
       </header>
 
       {/* ── Mobile drawer ── */}

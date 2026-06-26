@@ -17,6 +17,13 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow the gift-engine alert ingest (POST /api/alerts) — self-protected by
+  // GIFT_ALERT_SECRET. The list (GET) and /api/alerts/read stay behind the login
+  // cookie below, since alert details can include customer emails.
+  if (pathname === "/api/alerts" && req.method === "POST") {
+    return NextResponse.next();
+  }
+
   const session = req.cookies.get(AUTH_COOKIE)?.value;
   if (session === SESSION_SECRET) {
     return NextResponse.next();
