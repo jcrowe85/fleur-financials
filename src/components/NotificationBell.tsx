@@ -90,7 +90,7 @@ export function NotificationBell() {
       </PopoverTrigger>
 
       <PopoverContent align="end" sideOffset={6} className="w-80 p-0">
-        <PopoverHeader className="flex items-center gap-3 border-b px-3 py-2.5">
+        <PopoverHeader className="flex flex-row items-center justify-start gap-3 border-b px-3 py-2.5 text-left">
           <PopoverTitle className="text-sm font-semibold">Gift Engine Alerts</PopoverTitle>
           {unread > 0 && (
             <button
