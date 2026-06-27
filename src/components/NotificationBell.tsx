@@ -89,7 +89,7 @@ export function NotificationBell() {
         )}
       </PopoverTrigger>
 
-      <PopoverContent align="end" sideOffset={6} className="w-80 p-0">
+      <PopoverContent side="right" align="start" sideOffset={8} className="w-80 p-0">
         <PopoverHeader className="flex items-center justify-between border-b px-3 py-2.5">
           <PopoverTitle className="text-sm font-semibold">Gift Engine Alerts</PopoverTitle>
           {unread > 0 && (

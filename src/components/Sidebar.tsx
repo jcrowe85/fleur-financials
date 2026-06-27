@@ -93,9 +93,19 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
         Tools
       </p>
 
-      {TOOLS.map((item) => (
-        <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
-      ))}
+      {TOOLS.map((item) =>
+        item.external && item.href.includes("fleur-gift-engine") ? (
+          // Gift Engine link carries the alert bell beside it.
+          <div key={item.href} className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <NavLink item={item} pathname={pathname} onNavigate={onNavigate} />
+            </div>
+            <NotificationBell />
+          </div>
+        ) : (
+          <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
+        ),
+      )}
     </>
   );
 }
@@ -117,9 +127,8 @@ export function Sidebar() {
     <>
       {/* ── Desktop: fixed left rail ── */}
       <aside className="hidden md:flex w-52 shrink-0 flex-col gap-1 border-r bg-card sticky top-0 h-screen p-3">
-        <div className="flex items-center justify-between px-3 py-2 mb-2">
+        <div className="flex items-center gap-2 px-3 py-2 mb-2">
           <span className="text-lg font-semibold tracking-tight">Fleur</span>
-          <NotificationBell />
         </div>
         <nav className="flex flex-col gap-0.5">
           <NavLinks pathname={pathname} />
@@ -129,16 +138,13 @@ export function Sidebar() {
       {/* ── Mobile: slim top bar ── */}
       <header className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b bg-card/95 backdrop-blur-sm px-4 h-12">
         <span className="text-base font-semibold tracking-tight">Fleur</span>
-        <div className="flex items-center gap-1">
-          <NotificationBell />
-          <button
-            onClick={() => setOpen(true)}
-            aria-label="Open menu"
-            className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-          >
-            <Menu size={20} />
-          </button>
-        </div>
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="Open menu"
+          className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <Menu size={20} />
+        </button>
       </header>
 
       {/* ── Mobile drawer ── */}
