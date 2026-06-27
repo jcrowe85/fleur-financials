@@ -79,11 +79,11 @@ export function NotificationBell() {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label={`Alerts${unread ? ` (${unread} unread)` : ""}`}
-        className="relative flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        className="relative flex items-center justify-center size-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
       >
-        <Bell size={18} />
+        <Bell size={12} />
         {unread > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex min-w-4 h-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+          <span className="absolute -top-0.5 -right-0.5 flex min-w-[11px] h-[11px] items-center justify-center rounded-full bg-red-500 px-[2px] text-[7px] font-semibold leading-none text-white">
             {unread > 99 ? "99+" : unread}
           </span>
         )}

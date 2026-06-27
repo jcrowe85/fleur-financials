@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, ExternalLink, Gift, History, Menu, Wand2, X } from "lucide-react";
+import { BarChart3, Gift, History, Menu, Wand2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -66,7 +66,6 @@ function NavLink({ item, pathname, onNavigate }: { item: NavItem; pathname: stri
       >
         <span className="shrink-0">{item.icon}</span>
         {item.label}
-        <ExternalLink size={12} className="ml-auto shrink-0 text-muted-foreground/50" />
       </a>
     );
   }
