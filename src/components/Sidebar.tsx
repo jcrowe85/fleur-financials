@@ -94,11 +94,9 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
 
       {TOOLS.map((item) =>
         item.external && item.href.includes("fleur-gift-engine") ? (
-          // Gift Engine link carries the alert bell beside it.
-          <div key={item.href} className="flex items-center gap-1">
-            <div className="min-w-0 flex-1">
-              <NavLink item={item} pathname={pathname} onNavigate={onNavigate} />
-            </div>
+          // Gift Engine link with the alert bell right after the label.
+          <div key={item.href} className="flex items-center gap-0.5">
+            <NavLink item={item} pathname={pathname} onNavigate={onNavigate} />
             <NotificationBell />
           </div>
         ) : (
